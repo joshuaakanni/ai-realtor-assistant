@@ -267,3 +267,9 @@ Website: `blanyx.com`
 ## Usage
 
 This repository is published as a portfolio and demonstration project. No open-source license is included. All rights remain with the project owner unless a license is added later.
+
+## System Overview
+
+The Voiceflow assistant routes visitors through property discovery, tour requests, incentive inquiries, general questions, and realtor contact workflows.
+
+![AI Realtor Assistant Voiceflow system overview](docs/screenshots/voiceflow-system-overview.png)
