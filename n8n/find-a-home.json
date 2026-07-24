@@ -1,0 +1,341 @@
+{
+  "name": "chatbot-find-a-home",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "find-a-home-demo",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c3790172-ffd6-4a73-8554-7d505f1e853a",
+      "name": "Find a Home Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\n// Voiceflow data normally arrives inside `body`.\n// This also supports direct objects and stringified JSON.\nlet body = input.body ?? input;\n\nif (typeof body === 'string') {\n  try {\n    body = JSON.parse(body);\n  } catch {\n    body = {};\n  }\n}\n\nfunction clean(value, fallback = 'Not specified') {\n  if (\n    value === undefined ||\n    value === null ||\n    value === '' ||\n    value === 0 ||\n    value === '0'\n  ) {\n    return fallback;\n  }\n\n  return String(value).trim() || fallback;\n}\n\nfunction normalizeMatchStatus(value) {\n  const text = clean(value, 'No Match Found').toLowerCase();\n\n  if (text.includes('partial')) return 'Partial Match Found';\n  if (text.includes('no match')) return 'No Match Found';\n  if (text.includes('match found') || text === 'match') return 'Match Found';\n\n  return 'No Match Found';\n}\n\nfunction normalizeNextAction(value) {\n  const text = clean(value, 'No Further Action').toLowerCase();\n\n  if (text.includes('tour')) return 'Tour Requested';\n  if (text.includes('follow')) return 'Follow-up Requested';\n\n  return 'No Further Action';\n}\n\nconst nextAction = normalizeNextAction(body.next_action);\nconst matchStatus = normalizeMatchStatus(body.match_status);\n\nlet requestStatus = 'Completed';\n\nif (nextAction === 'Tour Requested') {\n  requestStatus = 'Tour Requested';\n} else if (nextAction === 'Follow-up Requested') {\n  requestStatus = 'Follow-up Requested';\n}\n\nconst requestedTimezone = clean(\n  body.business_timezone ??\n  body.requested_time_timezone ??\n  body.timezone,\n  'UTC'\n);\n\nlet timezone = requestedTimezone;\n\ntry {\n  new Intl.DateTimeFormat('en-US', {\n    timeZone: timezone,\n  }).format(new Date());\n} catch {\n  timezone = 'UTC';\n}\n\nconst now = new Date();\n\nconst dateSubmitted = new Intl.DateTimeFormat('en-CA', {\n  timeZone: timezone,\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n}).format(now);\n\nconst timestamp = new Intl.DateTimeFormat('en-GB', {\n  timeZone: timezone,\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n  hour: '2-digit',\n  minute: '2-digit',\n  second: '2-digit',\n  hour12: false,\n}).format(now);\n\nconst randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();\nconst homeSearchId = `HOME-${Date.now()}-${randomPart}`;\n\nreturn [\n  {\n    json: {\n      home_search_id: homeSearchId,\n\n      name: clean(body.name),\n      phone: clean(body.phone),\n      email:\n        clean(body.email) === 'Not specified'\n          ? 'Not specified'\n          : clean(body.email).toLowerCase(),\n\n      visitor_type: clean(body.visitor_type),\n      preferred_area: clean(body.preferred_area),\n      preferred_property: clean(body.preferred_property),\n      budget: clean(body.budget),\n      bedrooms: clean(body.bedrooms),\n      bathrooms: clean(body.bathrooms),\n      move_in_timeline: clean(body.move_in_timeline),\n      financing_method: clean(body.financing_method),\n      must_have_features: clean(body.must_have_features),\n      additional_notes: clean(body.additional_notes),\n\n      match_status: matchStatus,\n      recommendation_summary: clean(body.recommendation_summary),\n      selected_option: clean(body.selected_option),\n      next_action: nextAction,\n\n      preferred_contact_method: clean(body.preferred_contact_method),\n      best_time_to_contact: clean(body.best_time_to_contact),\n\n      request_status: requestStatus,\n      submission_timezone: timezone,\n      date_submitted: dateSubmitted,\n      timestamp,\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "b4c19e54-cb8e-4f96-89fd-911acc68144b",
+      "name": "Home Search Data Normalisation"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Home_Search_Requests",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Home Search ID": "={{ $json.home_search_id }}",
+            "Name": "={{ $json.name }}",
+            "Phone": "={{ $json.phone }}",
+            "Email": "={{ $json.email }}",
+            "Visitor Type": "={{ $json.visitor_type }}",
+            "Preferred Area": "={{ $json.preferred_area }}",
+            "Preferred Property or Floor Plan": "={{ $json.preferred_property }}",
+            "Budget": "={{ $json.budget }}",
+            "Bedrooms": "={{ $json.bedrooms }}",
+            "Bathrooms": "={{ $json.bathrooms }}",
+            "Move-in Timeline": "={{ $json.move_in_timeline }}",
+            "Financing Method": "={{ $json.financing_method }}",
+            "Must-have Features": "={{ $json.must_have_features }}",
+            "Additional Notes": "={{ $json.additional_notes }}",
+            "Match Status": "={{ $json.match_status }}",
+            "Recommendation Summary": "={{ $json.recommendation_summary }}",
+            "Preferred Contact Method": "={{ $json.preferred_contact_method }}",
+            "Best Time To Contact": "={{ $json.best_time_to_contact }}",
+            "Request Status": "={{ $json.request_status }}",
+            "Date Submitted": "={{ $json.date_submitted }}",
+            "Timestamp": "={{ $json.timestamp }}",
+            "Selected Option": "={{ $json.selected_option }}",
+            "Next Action": "={{ $json.next_action }}",
+            "Submission Timezone": "={{ $json.submission_timezone }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Home Search ID",
+              "displayName": "Home Search ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Visitor Type",
+              "displayName": "Visitor Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Area",
+              "displayName": "Preferred Area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Property or Floor Plan",
+              "displayName": "Preferred Property or Floor Plan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Budget",
+              "displayName": "Budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bedrooms",
+              "displayName": "Bedrooms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Bathrooms",
+              "displayName": "Bathrooms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Move-in Timeline",
+              "displayName": "Move-in Timeline",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Financing Method",
+              "displayName": "Financing Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Must-have Features",
+              "displayName": "Must-have Features",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Additional Notes",
+              "displayName": "Additional Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Match Status",
+              "displayName": "Match Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Recommendation Summary",
+              "displayName": "Recommendation Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Selected Option",
+              "displayName": "Selected Option",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Next Action",
+              "displayName": "Next Action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Contact Method",
+              "displayName": "Preferred Contact Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Best Time To Contact",
+              "displayName": "Best Time To Contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Request Status",
+              "displayName": "Request Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date Submitted",
+              "displayName": "Date Submitted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submission Timezone",
+              "displayName": "Submission Timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        416,
+        0
+      ],
+      "id": "59481785-9e5e-4a92-87c6-620ba9c42556",
+      "name": "Append Home Search"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Find a Home Webhook": {
+      "main": [
+        [
+          {
+            "node": "Home Search Data Normalisation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Home Search Data Normalisation": {
+      "main": [
+        [
+          {
+            "node": "Append Home Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "tags": []
+}

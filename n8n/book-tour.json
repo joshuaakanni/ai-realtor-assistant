@@ -1,0 +1,324 @@
+{
+  "name": "chatbot-book-tour",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "book-tour-demo",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5de2c7f5-a75b-45ff-8852-d7ada88e6ee0",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get incoming data from the Webhook\nconst input = $input.first().json;\n\n// Voiceflow may send submitted data inside \"body\".\nlet body = input.body ?? input;\n\nif (typeof body === \"string\") {\n  try {\n    body = JSON.parse(body);\n  } catch {\n    throw new Error(\n      \"The submitted tour-request data could not be read.\"\n    );\n  }\n}\n\nif (!body || typeof body !== \"object\") {\n  throw new Error(\n    \"The submitted tour-request data is missing or invalid.\"\n  );\n}\n\n\n// Clean required text fields\nfunction clean(\n  value,\n  defaultValue = \"Not specified\"\n) {\n  if (\n    value === undefined ||\n    value === null\n  ) {\n    return defaultValue;\n  }\n\n  const text = String(value).trim();\n\n  return text === \"\"\n    ? defaultValue\n    : text;\n}\n\n\n// Clean optional fields\nfunction cleanOptional(\n  value,\n  defaultValue = \"Not specified\"\n) {\n  if (\n    value === undefined ||\n    value === null\n  ) {\n    return defaultValue;\n  }\n\n  const text = String(value).trim();\n\n  if (\n    text === \"\" ||\n    text === \"0\"\n  ) {\n    return defaultValue;\n  }\n\n  return text;\n}\n\n\n// Preserve phone number exactly as received\nfunction preservePhone(\n  value,\n  defaultValue = \"Not specified\"\n) {\n  if (\n    value === undefined ||\n    value === null\n  ) {\n    return defaultValue;\n  }\n\n  const phone = String(value);\n\n  return phone.trim() === \"\"\n    ? defaultValue\n    : phone;\n}\n\n\n// Validate and lowercase required email\nfunction cleanEmail(value) {\n  const cleaned = clean(value);\n\n  if (cleaned === \"Not specified\") {\n    throw new Error(\n      \"A valid email address is required. The tour request was not saved.\"\n    );\n  }\n\n  const email = cleaned.toLowerCase();\n\n  if (email.length > 254) {\n    throw new Error(\n      \"The email address is too long. The tour request was not saved.\"\n    );\n  }\n\n  if (/\\s/.test(email)) {\n    throw new Error(\n      \"The email address contains spaces. The tour request was not saved.\"\n    );\n  }\n\n  const parts = email.split(\"@\");\n\n  if (parts.length !== 2) {\n    throw new Error(\n      \"The email address must contain exactly one @ symbol. The tour request was not saved.\"\n    );\n  }\n\n  const [localPart, domain] = parts;\n\n  if (!localPart || !domain) {\n    throw new Error(\n      \"The email address is incomplete. The tour request was not saved.\"\n    );\n  }\n\n  if (localPart.length > 64) {\n    throw new Error(\n      \"The email address is invalid. The tour request was not saved.\"\n    );\n  }\n\n  if (\n    localPart.startsWith(\".\") ||\n    localPart.endsWith(\".\") ||\n    localPart.includes(\"..\") ||\n    domain.includes(\"..\")\n  ) {\n    throw new Error(\n      \"The email address contains an invalid period placement. The tour request was not saved.\"\n    );\n  }\n\n  const validLocalPart =\n    /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i;\n\n  if (!validLocalPart.test(localPart)) {\n    throw new Error(\n      \"The email address contains an unsupported character. The tour request was not saved.\"\n    );\n  }\n\n  if (!domain.includes(\".\")) {\n    throw new Error(\n      \"The email domain is incomplete. The tour request was not saved.\"\n    );\n  }\n\n  const domainParts = domain.split(\".\");\n\n  for (const domainPart of domainParts) {\n    if (\n      !domainPart ||\n      domainPart.length > 63 ||\n      !/^[a-z0-9-]+$/i.test(domainPart) ||\n      domainPart.startsWith(\"-\") ||\n      domainPart.endsWith(\"-\")\n    ) {\n      throw new Error(\n        \"The email domain is invalid. The tour request was not saved.\"\n      );\n    }\n  }\n\n  const topLevelDomain =\n    domainParts[domainParts.length - 1];\n\n  if (!/^[a-z]{2,63}$/i.test(topLevelDomain)) {\n    throw new Error(\n      \"The email domain ending is invalid. The tour request was not saved.\"\n    );\n  }\n\n  return email;\n}\n\n\n// Validate IANA timezone\nfunction validateTimezone(timezone) {\n  try {\n    new Intl.DateTimeFormat(\"en-US\", {\n      timeZone: timezone\n    }).format(new Date());\n\n    return timezone;\n  } catch {\n    throw new Error(\n      `The tour timezone \"${timezone}\" is invalid. The request was not saved.`\n    );\n  }\n}\n\n\n// Return date/time parts for a timestamp in a timezone\nfunction getTimezoneParts(\n  timestamp,\n  timezone\n) {\n  const parts =\n    new Intl.DateTimeFormat(\"en-GB\", {\n      timeZone: timezone,\n      year: \"numeric\",\n      month: \"2-digit\",\n      day: \"2-digit\",\n      hour: \"2-digit\",\n      minute: \"2-digit\",\n      second: \"2-digit\",\n      hour12: false,\n      hourCycle: \"h23\"\n    }).formatToParts(new Date(timestamp));\n\n  function getValue(type) {\n    const part = parts.find(\n      (item) => item.type === type\n    );\n\n    return part\n      ? Number(part.value)\n      : NaN;\n  }\n\n  return {\n    year: getValue(\"year\"),\n    month: getValue(\"month\"),\n    day: getValue(\"day\"),\n    hour: getValue(\"hour\"),\n    minute: getValue(\"minute\"),\n    second: getValue(\"second\")\n  };\n}\n\n\n// Convert local YYYY-MM-DD and HH:mm into UTC\nfunction localDateTimeToUtc(\n  dateInput,\n  timeInput,\n  timezone,\n  fieldLabel\n) {\n  const date = clean(dateInput);\n  const time = clean(timeInput);\n\n  if (\n    date === \"Not specified\" ||\n    time === \"Not specified\"\n  ) {\n    throw new Error(\n      `${fieldLabel} date and time are required.`\n    );\n  }\n\n  const dateMatch =\n    /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(date);\n\n  if (!dateMatch) {\n    throw new Error(\n      `${fieldLabel} date must use YYYY-MM-DD format.`\n    );\n  }\n\n  const timeMatch =\n    /^([01]\\d|2[0-3]):([0-5]\\d)$/.exec(time);\n\n  if (!timeMatch) {\n    throw new Error(\n      `${fieldLabel} time must use 24-hour HH:mm format.`\n    );\n  }\n\n  const year = Number(dateMatch[1]);\n  const month = Number(dateMatch[2]);\n  const day = Number(dateMatch[3]);\n  const hour = Number(timeMatch[1]);\n  const minute = Number(timeMatch[2]);\n\n  const calendarCheck = new Date(\n    Date.UTC(year, month - 1, day)\n  );\n\n  if (\n    calendarCheck.getUTCFullYear() !== year ||\n    calendarCheck.getUTCMonth() !== month - 1 ||\n    calendarCheck.getUTCDate() !== day\n  ) {\n    throw new Error(\n      `${fieldLabel} contains an invalid calendar date.`\n    );\n  }\n\n  const desiredAsUtc = Date.UTC(\n    year,\n    month - 1,\n    day,\n    hour,\n    minute,\n    0\n  );\n\n  let requestedTimestamp = desiredAsUtc;\n\n  // Adjust repeatedly until the timestamp displays\n  // as the requested local date/time in the timezone.\n  for (\n    let attempt = 0;\n    attempt < 4;\n    attempt += 1\n  ) {\n    const observed = getTimezoneParts(\n      requestedTimestamp,\n      timezone\n    );\n\n    const observedAsUtc = Date.UTC(\n      observed.year,\n      observed.month - 1,\n      observed.day,\n      observed.hour,\n      observed.minute,\n      0\n    );\n\n    requestedTimestamp +=\n      desiredAsUtc - observedAsUtc;\n  }\n\n  const verified = getTimezoneParts(\n    requestedTimestamp,\n    timezone\n  );\n\n  if (\n    verified.year !== year ||\n    verified.month !== month ||\n    verified.day !== day ||\n    verified.hour !== hour ||\n    verified.minute !== minute\n  ) {\n    throw new Error(\n      `${fieldLabel} does not exist in timezone ${timezone}.`\n    );\n  }\n\n  return new Date(\n    requestedTimestamp\n  ).toISOString();\n}\n\n\n// Calculate optional alternative UTC timestamp\nfunction calculateAlternativeUtc(\n  alternativeDate,\n  alternativeTime,\n  timezone\n) {\n  const date = cleanOptional(\n    alternativeDate\n  );\n\n  const time = cleanOptional(\n    alternativeTime\n  );\n\n  if (\n    date === \"Not specified\" &&\n    time === \"Not specified\"\n  ) {\n    return \"Not specified\";\n  }\n\n  if (\n    date === \"Not specified\" ||\n    time === \"Not specified\"\n  ) {\n    throw new Error(\n      \"The alternative tour date and time must either both be provided or both be Not specified.\"\n    );\n  }\n\n  return localDateTimeToUtc(\n    date,\n    time,\n    timezone,\n    \"Alternative tour\"\n  );\n}\n\n\n// Read and validate timezone\nconst requestedTimeTimezone =\n  validateTimezone(\n    clean(body.requested_time_timezone)\n  );\n\n\n// Clean tour dates and times\nconst preferredDate = clean(\n  body.preferred_date\n);\n\nconst preferredTime = clean(\n  body.preferred_time\n);\n\nconst alternativeDate = cleanOptional(\n  body.alternative_date\n);\n\nconst alternativeTime = cleanOptional(\n  body.alternative_time\n);\n\n\n// Calculate UTC timestamps directly in n8n\nconst preferredDatetimeUtc =\n  localDateTimeToUtc(\n    preferredDate,\n    preferredTime,\n    requestedTimeTimezone,\n    \"Preferred tour\"\n  );\n\nconst alternativeDatetimeUtc =\n  calculateAlternativeUtc(\n    alternativeDate,\n    alternativeTime,\n    requestedTimeTimezone\n  );\n\n\n// Generate submission date and timestamp.\n// Prefer a supplied business timezone; fall back to the requested tour timezone.\nconst submissionTimezone = validateTimezone(\n  cleanOptional(\n    body.business_timezone,\n    requestedTimeTimezone\n  )\n);\n\nconst now = new Date();\n\nconst submissionParts =\n  new Intl.DateTimeFormat(\"en-GB\", {\n    timeZone: submissionTimezone,\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    second: \"2-digit\",\n    hour12: false,\n    hourCycle: \"h23\"\n  }).formatToParts(now);\n\nconst getSubmissionPart = (type) =>\n  submissionParts.find(\n    (part) => part.type === type\n  )?.value;\n\nconst year = getSubmissionPart(\"year\");\nconst month = getSubmissionPart(\"month\");\nconst day = getSubmissionPart(\"day\");\nconst hour = getSubmissionPart(\"hour\");\nconst minute = getSubmissionPart(\"minute\");\nconst second = getSubmissionPart(\"second\");\n\nconst dateSubmitted =\n  `${year}-${month}-${day}`;\n\nconst timestamp =\n  `${dateSubmitted} ${hour}:${minute}:${second}`;\n\n\n// Generate unique tour-request ID\nconst randomPart = Math.random()\n  .toString(36)\n  .slice(2, 8)\n  .toUpperCase();\n\nconst tourRequestId =\n  `TOUR-${year}${month}${day}-${Date.now()}-${randomPart}`;\n\n\n// Return normalized tour data\nreturn [\n  {\n    json: {\n      tour_request_id: tourRequestId,\n\n      name: clean(\n        body.name\n      ),\n\n      phone: preservePhone(\n        body.phone\n      ),\n\n      email: cleanEmail(\n        body.email\n      ),\n\n      visitor_type: clean(\n        body.visitor_type\n      ),\n\n      tour_type: cleanOptional(\n        body.tour_type,\n        \"Model Home Tour\"\n      ),\n\n      community: clean(\n        body.community\n      ),\n\n      property: clean(\n        body.property\n      ),\n\n      preferred_date: preferredDate,\n\n      preferred_time: preferredTime,\n\n      preferred_datetime_utc:\n        preferredDatetimeUtc,\n\n      alternative_date:\n        alternativeDate,\n\n      alternative_time:\n        alternativeTime,\n\n      alternative_datetime_utc:\n        alternativeDatetimeUtc,\n\n      requested_time_timezone:\n        requestedTimeTimezone,\n\n      number_of_guests: cleanOptional(\n        body.number_of_guests\n      ),\n\n      special_instructions: cleanOptional(\n        body.special_instructions\n      ),\n\n      preferred_contact_method: clean(\n        body.preferred_contact_method\n      ),\n\n      booking_status: \"Pending\",\n\n      submission_timezone: submissionTimezone,\n\n      date_submitted: dateSubmitted,\n\n      timestamp\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "956ccb1a-f59b-40c1-bd15-3d9f2f5d53ca",
+      "name": "Tour Data Normalisation"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Tour_Requests",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Tour Request ID": "={{ $json.tour_request_id }}",
+            "Name": "={{ $json.name }}",
+            "Phone": "={{ $json.phone }}",
+            "Email": "={{ $json.email }}",
+            "Tour Type": "={{ $json.tour_type }}",
+            "Community": "={{ $json.community }}",
+            "Property or Floor Plan": "={{ $json.property }}",
+            "Preferred Date": "={{ $json.preferred_date }}",
+            "Preferred Time": "={{ $json.preferred_time }}",
+            "Alternative Date": "={{ $json.alternative_date }}",
+            "Alternative Time": "={{ $json.alternative_time }}",
+            "Number of Guests": "={{ $json.number_of_guests }}",
+            "Special Instructions": "={{ $json.special_instructions }}",
+            "Preferred Contact Method": "={{ $json.preferred_contact_method }}",
+            "Booking Status": "={{ $json.booking_status }}",
+            "Date Submitted": "={{ $json.date_submitted }}",
+            "Timestamp": "={{ $json.timestamp }}",
+            "requested_time_timezone": "={{ $json.requested_time_timezone }}",
+            "preferred_datetime_utc": "={{ $json.preferred_datetime_utc }}",
+            "alternative_datetime_utc": "={{ $json.alternative_datetime_utc }}",
+            "Visitor Type": "={{ $json.visitor_type }}",
+            "Submission Timezone": "={{ $json.submission_timezone }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Tour Request ID",
+              "displayName": "Tour Request ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Visitor Type",
+              "displayName": "Visitor Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tour Type",
+              "displayName": "Tour Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Community",
+              "displayName": "Community",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Property or Floor Plan",
+              "displayName": "Property or Floor Plan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Date",
+              "displayName": "Preferred Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Time",
+              "displayName": "Preferred Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Alternative Date",
+              "displayName": "Alternative Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Alternative Time",
+              "displayName": "Alternative Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Number of Guests",
+              "displayName": "Number of Guests",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Special Instructions",
+              "displayName": "Special Instructions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Contact Method",
+              "displayName": "Preferred Contact Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Booking Status",
+              "displayName": "Booking Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date Submitted",
+              "displayName": "Date Submitted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "requested_time_timezone",
+              "displayName": "requested_time_timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "preferred_datetime_utc",
+              "displayName": "preferred_datetime_utc",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "alternative_datetime_utc",
+              "displayName": "alternative_datetime_utc",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Submission Timezone",
+              "displayName": "Submission Timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        416,
+        0
+      ],
+      "id": "027dfeae-7c1e-4dd3-91ea-a26b850964e7",
+      "name": "Append Tour Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Tour Data Normalisation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tour Data Normalisation": {
+      "main": [
+        [
+          {
+            "node": "Append Tour Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "tags": []
+}

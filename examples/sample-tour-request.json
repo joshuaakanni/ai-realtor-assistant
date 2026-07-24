@@ -1,0 +1,18 @@
+{
+  "name": "Taylor Morgan",
+  "phone": "+1 555 010 2040",
+  "email": "taylor.morgan@example.com",
+  "visitor_type": "Home Buyer",
+  "tour_type": "Model Home Tour",
+  "community": "Oakridge Estates",
+  "property": "Cascade Model",
+  "preferred_date": "2026-08-15",
+  "preferred_time": "14:00",
+  "alternative_date": "2026-08-16",
+  "alternative_time": "11:00",
+  "requested_time_timezone": "America/Chicago",
+  "business_timezone": "America/Chicago",
+  "number_of_guests": "2",
+  "special_instructions": "Please confirm parking instructions.",
+  "preferred_contact_method": "Phone Call"
+}

@@ -1,0 +1,301 @@
+{
+  "name": "chatbot-incentive-request",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incentive-request-demo",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1a9f30ba-405c-428a-b2c8-673b8346dfc6",
+      "name": "Incentive Request Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the incoming item from the Webhook\nconst input = $input.first().json;\n\n// n8n Webhooks normally place submitted JSON inside \"body\".\n// This fallback also supports directly received JSON.\nlet body =\n  input.body !== undefined\n    ? input.body\n    : input;\n\n// Handle the unlikely case that the body arrives as a JSON string\nif (typeof body === \"string\") {\n  try {\n    body = JSON.parse(body);\n  } catch {\n    body = {};\n  }\n}\n\n// Replace missing Voiceflow values with a default\nfunction clean(value, defaultValue = \"Not specified\") {\n  if (value === undefined || value === null) {\n    return defaultValue;\n  }\n\n  const text = String(value).trim();\n\n  if (text === \"\" || text === \"0\") {\n    return defaultValue;\n  }\n\n  return text;\n}\n\n// Normalise Yes/No fields\nfunction cleanYesNo(value, defaultValue = \"No\") {\n  const text = clean(value, defaultValue).toLowerCase();\n\n  return text === \"yes\" ? \"Yes\" : \"No\";\n}\n\n// Normalise information status\nfunction cleanInformationStatus(value) {\n  const text = clean(value, \"Unavailable\").toLowerCase();\n\n  return text === \"verified\"\n    ? \"Verified\"\n    : \"Unavailable\";\n}\n\n// Normalise the final request status\nfunction cleanRequestStatus(value, followUpRequested, informationStatus) {\n  const text = clean(value, \"\").toLowerCase();\n\n  if (\n    followUpRequested === \"Yes\" ||\n    text === \"follow-up requested\" ||\n    text === \"follow up requested\"\n  ) {\n    return \"Follow-up Requested\";\n  }\n\n  if (\n    informationStatus === \"Unavailable\" ||\n    text === \"information unavailable\"\n  ) {\n    return \"Information Unavailable\";\n  }\n\n  return \"Answered\";\n}\n\n// Generate submission date and timestamp.\n// Prefer a supplied business timezone; fall back to UTC.\nconst requestedSubmissionTimezone = clean(\n  body.business_timezone ??\n  body.submission_timezone,\n  \"UTC\"\n);\n\nlet submissionTimezone = requestedSubmissionTimezone;\n\ntry {\n  new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: submissionTimezone\n  }).format(new Date());\n} catch {\n  submissionTimezone = \"UTC\";\n}\n\nconst now = new Date();\n\nconst parts = new Intl.DateTimeFormat(\"en-GB\", {\n  timeZone: submissionTimezone,\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\",\n  hour: \"2-digit\",\n  minute: \"2-digit\",\n  second: \"2-digit\",\n  hourCycle: \"h23\"\n}).formatToParts(now);\n\nconst getPart = (type) =>\n  parts.find((part) => part.type === type)?.value;\n\nconst year = getPart(\"year\");\nconst month = getPart(\"month\");\nconst day = getPart(\"day\");\nconst hour = getPart(\"hour\");\nconst minute = getPart(\"minute\");\nconst second = getPart(\"second\");\n\nconst dateSubmitted = `${year}-${month}-${day}`;\nconst timestamp =\n  `${dateSubmitted} ${hour}:${minute}:${second}`;\n\n// Generate a unique incentive-request ID\nconst randomPart = Math.random()\n  .toString(36)\n  .slice(2, 8)\n  .toUpperCase();\n\nconst incentiveRequestId =\n  `INCENTIVE-${year}${month}${day}-${Date.now()}-${randomPart}`;\n\n// Normalise linked values\nconst informationStatus = cleanInformationStatus(\n  body.information_status\n);\n\nconst followUpRequested = cleanYesNo(\n  body.follow_up_requested\n);\n\nconst requestStatus = cleanRequestStatus(\n  body.request_status,\n  followUpRequested,\n  informationStatus\n);\n\n// Return one flattened item for Google Sheets\nreturn [\n  {\n    json: {\n      incentive_request_id: incentiveRequestId,\n\n      // Contact details are handled in the separate\n      // Leave a Message for Justin workflow.\n      name: \"Not specified\",\n\n      phone: \"Not specified\",\n\n      email: \"Not specified\",\n\n      community: clean(body.community),\n\n      property: clean(body.property),\n\n      incentive_topic: clean(\n        body.incentive_topic\n      ),\n\n      incentive_question: clean(\n        body.incentive_question\n      ),\n\n      information_status: informationStatus,\n\n      answer_summary: clean(\n        body.answer_summary\n      ),\n\n      financing_method: clean(\n        body.financing_method\n      ),\n\n      preferred_lender_status: clean(\n        body.preferred_lender_status\n      ),\n\n      move_in_or_closing_timeline: clean(\n        body.move_in_or_closing_timeline\n      ),\n\n      follow_up_requested: followUpRequested,\n\n      // These are collected separately when follow-up is requested.\n      preferred_contact_method: \"Not specified\",\n\n      best_time_to_contact: \"Not specified\",\n\n      request_status: requestStatus,\n\n      submission_timezone: submissionTimezone,\n\n      date_submitted: dateSubmitted,\n\n      timestamp: timestamp\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "5b6261b1-e122-4281-bef6-102f647e2ae0",
+      "name": "Incentive Data Normalisation"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Incentive_Requests",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Incentive Request ID": "={{ $json.incentive_request_id }}",
+            "Name": "={{ $json.name }}",
+            "Phone": "={{ $json.phone }}",
+            "Email": "={{ $json.email }}",
+            "Community": "={{ $json.community }}",
+            "Property or Floor Plan": "={{ $json.property }}",
+            "Incentive Topic": "={{ $json.incentive_topic }}",
+            "Information Status": "={{ $json.information_status }}",
+            "Incentive Question": "={{ $json.incentive_question }}",
+            "Answer Summary": "={{ $json.answer_summary }}",
+            "Financing": "={{ $json.financing_method }}",
+            "Preferred Lender Status": "={{ $json.preferred_lender_status }}",
+            "Move-in or Closing Timeline": "={{ $json.move_in_or_closing_timeline }}",
+            "Preferred Contact Method": "={{ $json.preferred_contact_method }}",
+            "Best Time To Contact": "={{ $json.best_time_to_contact }}",
+            "Request Status": "={{ $json.request_status }}",
+            "Date Submitted": "={{ $json.date_submitted }}",
+            "Timestamp": "={{ $json.timestamp }}",
+            "Follow-up Requested": "={{ $json.follow_up_requested }}",
+            "Submission Timezone": "={{ $json.submission_timezone }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Incentive Request ID",
+              "displayName": "Incentive Request ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Community",
+              "displayName": "Community",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Property or Floor Plan",
+              "displayName": "Property or Floor Plan",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Incentive Topic",
+              "displayName": "Incentive Topic",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Information Status",
+              "displayName": "Information Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Incentive Question",
+              "displayName": "Incentive Question",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Answer Summary",
+              "displayName": "Answer Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Financing",
+              "displayName": "Financing",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Lender Status",
+              "displayName": "Preferred Lender Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Move-in or Closing Timeline",
+              "displayName": "Move-in or Closing Timeline",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Follow-up Requested",
+              "displayName": "Follow-up Requested",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Contact Method",
+              "displayName": "Preferred Contact Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Best Time To Contact",
+              "displayName": "Best Time To Contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Request Status",
+              "displayName": "Request Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date Submitted",
+              "displayName": "Date Submitted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submission Timezone",
+              "displayName": "Submission Timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        416,
+        0
+      ],
+      "id": "7f4a0d58-1963-40fd-8846-8603e3cd0628",
+      "name": "Append Incentive Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Incentive Data Normalisation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incentive Data Normalisation": {
+      "main": [
+        [
+          {
+            "node": "Append Incentive Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "tags": []
+}

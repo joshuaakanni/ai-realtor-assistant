@@ -1,0 +1,14 @@
+{
+  "name": "Taylor Morgan",
+  "phone": "+1 555 010 2040",
+  "email": "taylor.morgan@example.com",
+  "reason_for_contact": "Property inquiry",
+  "message": "I would like more information about the Cascade Model.",
+  "community_or_property": "Oakridge Estates",
+  "urgency": "Normal",
+  "preferred_contact_method": "Email",
+  "best_time_to_contact": "2026-08-15 at 14:00",
+  "requested_time_timezone": "America/Chicago",
+  "requested_datetime_utc": "2026-08-15T19:00:00.000Z",
+  "business_timezone": "America/Chicago"
+}

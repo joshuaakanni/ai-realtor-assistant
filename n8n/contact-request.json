@@ -1,0 +1,263 @@
+{
+  "name": "chatbot-contact-request",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contact-request-demo",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c545c599-8420-4b3e-8800-f697cd7d9554",
+      "name": "Contact Request Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the incoming item from the Webhook\nconst input = $input.first().json;\n\n// Voiceflow normally submits JSON inside \"body\".\n// This also supports directly received or stringified JSON.\nlet body = input.body ?? input;\n\nif (typeof body === \"string\") {\n  try {\n    body = JSON.parse(body);\n  } catch {\n    throw new Error(\n      \"The submitted contact-request data could not be read.\"\n    );\n  }\n}\n\nif (!body || typeof body !== \"object\") {\n  throw new Error(\n    \"The submitted contact-request data is missing or invalid.\"\n  );\n}\n\n\n// Clean a field and replace missing Voiceflow values\nfunction clean(\n  value,\n  defaultValue = \"Not specified\"\n) {\n  if (\n    value === undefined ||\n    value === null\n  ) {\n    return defaultValue;\n  }\n\n  const text = String(value).trim();\n\n  if (\n    text === \"\" ||\n    text === \"0\"\n  ) {\n    return defaultValue;\n  }\n\n  return text;\n}\n\n\n// Preserve the phone number exactly as Voiceflow sends it\nfunction preservePhone(\n  value,\n  defaultValue = \"Not specified\"\n) {\n  if (\n    value === undefined ||\n    value === null\n  ) {\n    return defaultValue;\n  }\n\n  const phone = String(value);\n\n  if (\n    phone.trim() === \"\" ||\n    phone.trim() === \"0\"\n  ) {\n    return defaultValue;\n  }\n\n  return phone;\n}\n\n\n// Validate and lowercase an email when one is provided\nfunction cleanEmail(value) {\n  const cleaned = clean(value);\n\n  // Email is optional because a phone number\n  // may be provided instead.\n  if (cleaned === \"Not specified\") {\n    return \"Not specified\";\n  }\n\n  const email = cleaned.toLowerCase();\n\n  if (email.length > 254) {\n    throw new Error(\n      \"The email address is too long. The contact request was not saved.\"\n    );\n  }\n\n  if (/\\s/.test(email)) {\n    throw new Error(\n      \"The email address contains spaces. The contact request was not saved.\"\n    );\n  }\n\n  const emailParts = email.split(\"@\");\n\n  if (emailParts.length !== 2) {\n    throw new Error(\n      \"The email address must contain exactly one @ symbol. The contact request was not saved.\"\n    );\n  }\n\n  const [localPart, domain] = emailParts;\n\n  if (!localPart || !domain) {\n    throw new Error(\n      \"The email address is incomplete. The contact request was not saved.\"\n    );\n  }\n\n  if (localPart.length > 64) {\n    throw new Error(\n      \"The email address is invalid. The contact request was not saved.\"\n    );\n  }\n\n  if (\n    localPart.startsWith(\".\") ||\n    localPart.endsWith(\".\") ||\n    localPart.includes(\"..\") ||\n    domain.includes(\"..\")\n  ) {\n    throw new Error(\n      \"The email address contains an invalid period placement. The contact request was not saved.\"\n    );\n  }\n\n  const validLocalPart =\n    /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i;\n\n  if (!validLocalPart.test(localPart)) {\n    throw new Error(\n      \"The email address contains an unsupported character. The contact request was not saved.\"\n    );\n  }\n\n  if (!domain.includes(\".\")) {\n    throw new Error(\n      \"The email domain is incomplete. The contact request was not saved.\"\n    );\n  }\n\n  const domainParts = domain.split(\".\");\n\n  for (const domainPart of domainParts) {\n    if (\n      !domainPart ||\n      domainPart.length > 63 ||\n      !/^[a-z0-9-]+$/i.test(domainPart) ||\n      domainPart.startsWith(\"-\") ||\n      domainPart.endsWith(\"-\")\n    ) {\n      throw new Error(\n        \"The email domain is invalid. The contact request was not saved.\"\n      );\n    }\n  }\n\n  const topLevelDomain =\n    domainParts[domainParts.length - 1];\n\n  if (\n    !/^[a-z]{2,63}$/i.test(\n      topLevelDomain\n    )\n  ) {\n    throw new Error(\n      \"The email domain ending is invalid. The contact request was not saved.\"\n    );\n  }\n\n  return email;\n}\n\n\n// Normalise urgency\nfunction cleanUrgency(value) {\n  const urgency = clean(\n    value,\n    \"Normal\"\n  ).toLowerCase();\n\n  return urgency === \"urgent\"\n    ? \"Urgent\"\n    : \"Normal\";\n}\n\n\n// Normalise the preferred contact method\nfunction cleanContactMethod(value) {\n  const method = clean(value);\n  const normalized = method.toLowerCase();\n\n  if (normalized.includes(\"email\")) {\n    return \"Email\";\n  }\n\n  if (\n    normalized.includes(\"text\") ||\n    normalized.includes(\"sms\")\n  ) {\n    return \"Text Message\";\n  }\n\n  if (\n    normalized.includes(\"phone\") ||\n    normalized.includes(\"call\")\n  ) {\n    return \"Phone Call\";\n  }\n\n  return method;\n}\n\n\n// Validate an optional IANA timezone\nfunction cleanTimezone(value) {\n  const timezone = clean(value);\n\n  if (timezone === \"Not specified\") {\n    return \"Not specified\";\n  }\n\n  try {\n    new Intl.DateTimeFormat(\n      \"en-US\",\n      {\n        timeZone: timezone\n      }\n    ).format(new Date());\n  } catch {\n    throw new Error(\n      `The callback timezone \"${timezone}\" is invalid. The contact request was not saved.`\n    );\n  }\n\n  return timezone;\n}\n\n\n// Validate an optional ISO 8601 UTC timestamp\nfunction cleanUtcTimestamp(value) {\n  const timestamp = clean(value);\n\n  if (timestamp === \"Not specified\") {\n    return \"Not specified\";\n  }\n\n  const parsedTimestamp = Date.parse(\n    timestamp\n  );\n\n  if (Number.isNaN(parsedTimestamp)) {\n    throw new Error(\n      \"The callback UTC date and time is invalid. The contact request was not saved.\"\n    );\n  }\n\n  return new Date(\n    parsedTimestamp\n  ).toISOString();\n}\n\n\n// Clean contact details before validation\nconst phone = preservePhone(\n  body.phone\n);\n\nconst email = cleanEmail(\n  body.email\n);\n\nconst preferredContactMethod =\n  cleanContactMethod(\n    body.preferred_contact_method\n  );\n\n\n// Require at least one usable contact detail\nif (\n  phone === \"Not specified\" &&\n  email === \"Not specified\"\n) {\n  throw new Error(\n    \"At least one phone number or valid email address is required. The contact request was not saved.\"\n  );\n}\n\n\n// Ensure the preferred method matches the supplied detail\nif (\n  preferredContactMethod === \"Email\" &&\n  email === \"Not specified\"\n) {\n  throw new Error(\n    \"Email was selected as the preferred contact method, but no valid email address was provided.\"\n  );\n}\n\nif (\n  (\n    preferredContactMethod === \"Phone Call\" ||\n    preferredContactMethod === \"Text Message\"\n  ) &&\n  phone === \"Not specified\"\n) {\n  throw new Error(\n    \"A phone number is required for phone-call or text-message contact.\"\n  );\n}\n\n\n// Clean callback timezone and UTC timestamp\nconst requestedTimeTimezone =\n  cleanTimezone(\n    body.requested_time_timezone\n  );\n\nconst requestedDatetimeUtc =\n  cleanUtcTimestamp(\n    body.requested_datetime_utc\n  );\n\n\n// Generate submission date and timestamp.\n// Prefer a supplied business timezone, then the callback timezone, then UTC.\nconst submissionTimezoneCandidate =\n  clean(\n    body.business_timezone ??\n    body.requested_time_timezone,\n    \"UTC\"\n  );\n\nlet submissionTimezone = submissionTimezoneCandidate;\n\ntry {\n  new Intl.DateTimeFormat(\n    \"en-US\",\n    { timeZone: submissionTimezone }\n  ).format(new Date());\n} catch {\n  submissionTimezone = \"UTC\";\n}\n\nconst now = new Date();\n\nconst parts =\n  new Intl.DateTimeFormat(\n    \"en-GB\",\n    {\n      timeZone: submissionTimezone,\n      year: \"numeric\",\n      month: \"2-digit\",\n      day: \"2-digit\",\n      hour: \"2-digit\",\n      minute: \"2-digit\",\n      second: \"2-digit\",\n      hour12: false,\n      hourCycle: \"h23\"\n    }\n  ).formatToParts(now);\n\nconst getPart = (type) =>\n  parts.find(\n    (part) => part.type === type\n  )?.value;\n\nconst year = getPart(\"year\");\nconst month = getPart(\"month\");\nconst day = getPart(\"day\");\nconst hour = getPart(\"hour\");\nconst minute = getPart(\"minute\");\nconst second = getPart(\"second\");\n\nconst dateSubmitted =\n  `${year}-${month}-${day}`;\n\nconst timestamp =\n  `${dateSubmitted} ${hour}:${minute}:${second}`;\n\n\n// Generate a unique contact-request ID\nconst randomPart = Math.random()\n  .toString(36)\n  .slice(2, 8)\n  .toUpperCase();\n\nconst contactRequestId =\n  `CONTACT-${year}${month}${day}-${Date.now()}-${randomPart}`;\n\n\n// Return one flattened item for Google Sheets\nreturn [\n  {\n    json: {\n      contact_request_id:\n        contactRequestId,\n\n      name: clean(\n        body.name\n      ),\n\n      // Preserve exactly as entered\n      phone,\n\n      // Lowercase and validate when supplied\n      email,\n\n      reason_for_contact: clean(\n        body.reason_for_contact\n      ),\n\n      message: clean(\n        body.message\n      ),\n\n      community_or_property: clean(\n        body.community_or_property\n      ),\n\n      urgency: cleanUrgency(\n        body.urgency\n      ),\n\n      preferred_contact_method:\n        preferredContactMethod,\n\n      best_time_to_contact: clean(\n        body.best_time_to_contact\n      ),\n\n      requested_time_timezone:\n        requestedTimeTimezone,\n\n      requested_datetime_utc:\n        requestedDatetimeUtc,\n\n      request_status: \"Pending\",\n\n      submission_timezone:\n        submissionTimezone,\n\n      date_submitted:\n        dateSubmitted,\n\n      timestamp\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6985020f-891a-4934-87a6-2aa5768ac381",
+      "name": "Contact Data Normalisation"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Contact_Requests",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Phone": "={{ $json.phone }}",
+            "Email": "={{ $json.email }}",
+            "Reason for Contact": "={{ $json.reason_for_contact }}",
+            "Community or Property": "={{ $json.community_or_property }}",
+            "Message": "={{ $json.message }}",
+            "Urgency": "={{ $json.urgency }}",
+            "Preferred Contact Method": "={{ $json.preferred_contact_method }}",
+            "Best Time To Contact": "={{ $json.best_time_to_contact }}",
+            "Request Status": "={{ $json.request_status }}",
+            "Date Submitted": "={{ $json.date_submitted }}",
+            "Timestamp": "={{ $json.timestamp }}",
+            "requested_time_timezone": "={{ $json.requested_time_timezone }}",
+            "requested_datetime_utc": "={{ $json.requested_datetime_utc }}",
+            "Contact Request ID": "={{ $json.contact_request_id }}",
+            "Submission Timezone": "={{ $json.submission_timezone }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Contact Request ID",
+              "displayName": "Contact Request ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reason for Contact",
+              "displayName": "Reason for Contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Community or Property",
+              "displayName": "Community or Property",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Message",
+              "displayName": "Message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Urgency",
+              "displayName": "Urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Preferred Contact Method",
+              "displayName": "Preferred Contact Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Best Time To Contact",
+              "displayName": "Best Time To Contact",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Request Status",
+              "displayName": "Request Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date Submitted",
+              "displayName": "Date Submitted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "requested_time_timezone",
+              "displayName": "requested_time_timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "requested_datetime_utc",
+              "displayName": "requested_datetime_utc",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Submission Timezone",
+              "displayName": "Submission Timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        416,
+        0
+      ],
+      "id": "f27b620f-04d9-4399-b212-d8af40dceabd",
+      "name": "Append Contact Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Contact Data Normalisation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Data Normalisation": {
+      "main": [
+        [
+          {
+            "node": "Append Contact Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "tags": []
+}

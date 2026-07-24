@@ -1,0 +1,24 @@
+# Tour Request Fields
+
+- Tour Request ID
+- Name
+- Phone
+- Email
+- Visitor Type
+- Tour Type
+- Community
+- Property or Floor Plan
+- Preferred Date
+- Preferred Time
+- Preferred Datetime UTC
+- Alternative Date
+- Alternative Time
+- Alternative Datetime UTC
+- Requested Time Timezone
+- Number of Guests
+- Special Instructions
+- Preferred Contact Method
+- Booking Status
+- Submission Timezone
+- Date Submitted
+- Timestamp

@@ -1,0 +1,18 @@
+{
+  "name": "Taylor Morgan",
+  "email": "taylor.morgan@example.com",
+  "visitor_type": "Home Buyer",
+  "preferred_area": "Northwest Austin",
+  "preferred_property": "Detached home",
+  "budget": "$450,000\u2013$550,000",
+  "bedrooms": "4",
+  "bathrooms": "3",
+  "move_in_timeline": "Within 6 months",
+  "financing_method": "Mortgage",
+  "must_have_features": "Home office and two-car garage",
+  "match_status": "Partial Match Found",
+  "recommendation_summary": "Two models match most stated preferences.",
+  "selected_option": "Cascade Model",
+  "next_action": "Tour Requested",
+  "business_timezone": "America/Chicago"
+}

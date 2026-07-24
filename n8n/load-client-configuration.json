@@ -1,0 +1,97 @@
+{
+  "name": "load-client-configuration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "load-client-config-demo",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c077cd14-8011-42d1-bfe9-fe6a45754344",
+      "name": "Client Config Webhook"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Client_Config",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Client ID",
+              "lookupValue": "={{ $json.body.client_id || $json.client_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "fec17487-301b-4fcc-9fc5-7becbe001fd7",
+      "name": "Find Client Configuration",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\n\nconst clientId =\n  row[\"Client ID\"] ??\n  row.client_id ??\n  \"Not specified\";\n\nconst businessName =\n  row[\"Business Name\"] ??\n  row.business_name ??\n  \"Not specified\";\n\nconst businessTimezone =\n  row[\"Business Timezone\"] ??\n  row.business_timezone ??\n  \"\";\n\nif (!businessTimezone) {\n  throw new Error(\n    \"The client configuration does not contain a business timezone.\"\n  );\n}\n\n// Confirm that the stored value is a valid IANA timezone.\ntry {\n  new Intl.DateTimeFormat(\"en-US\", {\n    timeZone: businessTimezone,\n  }).format(new Date());\n} catch {\n  throw new Error(\n    `Invalid business timezone: ${businessTimezone}`\n  );\n}\n\nreturn [\n  {\n    json: {\n      config_loaded: true,\n      client_id: String(clientId).trim(),\n      business_name: String(businessName).trim(),\n      business_timezone: String(\n        businessTimezone\n      ).trim(),\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "48191f43-f4ea-4570-9cb7-f156638e84a6",
+      "name": "Format Client Configuration"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Client Config Webhook": {
+      "main": [
+        [
+          {
+            "node": "Find Client Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Client Configuration": {
+      "main": [
+        [
+          {
+            "node": "Format Client Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "tags": []
+}
